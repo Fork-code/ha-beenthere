@@ -114,7 +114,7 @@ class RegionSearchTests(unittest.TestCase):
                     self.assertEqual(len(parts[0]), 2)
                     self.assertTrue(1 <= len(parts[1]) <= 3)
                     self.assertTrue(parts[0].isupper())
-                    self.assertTrue(parts[1].isupper())
+                    self.assertRegex(parts[1], r"^[A-Z0-9]+$")
 
     def _get_relevance(self, name, query):
         """Calculate relevance score matching the frontend logic."""

@@ -896,17 +896,20 @@ class VisitedCountriesCard extends HTMLElement {
     const viewport=this.ownerDocument.defaultView.visualViewport;
     const top=viewport?.offsetTop||0;
     const left=(viewport?.offsetLeft||0)+12;
-    const right=left+(viewport?.width||this.ownerDocument.documentElement.clientWidth)-24;
+    const viewportWidth=viewport?.width||this.ownerDocument.documentElement.clientWidth;
+    const width=Math.min(250,Math.max(0,viewportWidth-24));
+    const right=left+viewportWidth-24;
     const bottom=top+(viewport?.height||this.ownerDocument.documentElement.clientHeight);
     const bounds=anchor.getBoundingClientRect();
     const below=Math.max(0,bottom-bounds.bottom-18);
     const above=Math.max(0,bounds.top-top-18);
     const openAbove=below<Math.min(popover.scrollHeight,240)&&above>below;
-    popover.style.maxHeight=`${openAbove?above:below}px`;
+    popover.style.width=`${width}px`;
+    popover.style.maxWidth=`${width}px`;
+    popover.style.maxHeight=`${Math.min(240,openAbove?above:below)}px`;
+    popover.style.left='auto';
     popover.style.top=openAbove?'auto':'calc(100% + 6px)';
     popover.style.bottom=openAbove?'calc(100% + 6px)':'auto';
-    popover.style.maxWidth=`${Math.max(0,Math.min(250,right-left))}px`;
-    const width=popover.getBoundingClientRect().width;
     const position=Math.max(left,Math.min(bounds.right-width,right-width));
     popover.style.right=`${bounds.right-position-width}px`;
   }
@@ -1052,6 +1055,9 @@ class VisitedCountriesCard extends HTMLElement {
       .search-result-actions #toggle-search-result:hover:not(:disabled){background:#1a3844;border-color:#63dccf}
       .search-result-actions #toggle-search-result.primary:hover:not(:disabled){background:#134a57;border-color:#7ce8df}
       .search-result-actions #toggle-search-result:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}.search-result-actions #toggle-search-result:active:not(:disabled){box-shadow:inset 0 1px 2px #0006}.search-result-actions #toggle-search-result:disabled{opacity:.5;cursor:default}
+      .search-result-actions #toggle-search-result{min-width:124px;height:44px}
+      .country-suggestions{max-height:250px}
+      .visited-country-list{padding-top:7px}
       @media(prefers-reduced-motion:reduce){.search-result-actions #toggle-search-result{transition:none}}
       @media(max-width:760px){.search-row{grid-template-columns:minmax(0,1fr) max-content;gap:12px}.filters-anchor{grid-column:2}.filters-toggle{flex-direction:row}.filters-toggle-content{display:none}.search-row>.search-result{grid-column:1/-1;grid-row:2}.search-result{flex-wrap:wrap}.search-result-info{flex-basis:calc(100% - 60px)}.search-result-actions{margin-left:auto}.country-edit{grid-column:1}.map-layout{grid-template-columns:minmax(0,1fr)}.region-panel{width:100%;aspect-ratio:var(--map-aspect-ratio,2);min-height:160px}}
       @media(max-width:520px){.map-layout{gap:10px}.region-panel select{padding:8px 4px;font-size:12px}.view-controls{padding:8px}.region-panel .view-selector select{font-size:12px}.country-search{width:100%}.vc{padding:12px}.region-summary{padding:10px}}
@@ -1194,6 +1200,11 @@ class VisitedCountriesCard extends HTMLElement {
     searchInput.onblur=()=>this.closeSearch();
     searchInput.onkeydown=event=>{
       if(event.key==='Escape'){event.preventDefault();this.closeSearch();}
+      if(event.key==='Enter'&&this.searchOpen&&this.searchMatches?.[this.searchIndex]) {
+        event.preventDefault();
+        const entry=this.searchMatches[this.searchIndex];
+        this.selectLocation(entry.region?entry.region.code:this.iso(entry.feature));
+      }
       if(event.key==='ArrowDown'||event.key==='ArrowUp') {
         event.preventDefault();
         const wasOpen=this.searchOpen;
