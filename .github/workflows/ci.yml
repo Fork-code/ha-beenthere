@@ -145,7 +145,7 @@ jobs:
       - name: Run browser tests
         run: |
           python -m pytest tests/test_frontend_browser.py \
-            -v -ra \
+            -v -ra -x \
             --junitxml=browser-test-results.xml
 
       - name: Upload browser test results
