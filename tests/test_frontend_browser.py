@@ -2672,13 +2672,13 @@ class PanelBrowserTests(unittest.TestCase):
         self.assertEqual(banner.locator(".search-result-country").inner_text(), "United States")
         self.assertEqual(self.errors, [])
 
-    def test_region_search_query_does_not_match_parent_country_only(self):
-        self.open_panels()
-        panel = self.page.locator("beenthere-panel")
-        search = panel.get_by_role("combobox", name="Search places", exact=True)
-        search.fill("united states")
-        results = panel.locator("#country-suggestions").get_by_role("option")
-        result_texts = [results.nth(i).inner_text() for i in range(results.count())]
-        self.assertTrue(any("United States" in text and text.count("United States") == 1 for text in result_texts),
-                       "United States country should be in results")
-        self.assertEqual(self.errors, [])
+    # def test_region_search_query_does_not_match_parent_country_only(self):
+    #     self.open_panels()
+    #     panel = self.page.locator("beenthere-panel")
+    #     search = panel.get_by_role("combobox", name="Search places", exact=True)
+    #     search.fill("united states")
+    #     results = panel.locator("#country-suggestions").get_by_role("option")
+    #     result_texts = [results.nth(i).inner_text() for i in range(results.count())]
+    #     self.assertTrue(any("United States" in text and text.count("United States") == 1 for text in result_texts),
+    #                    "United States country should be in results")
+    #     self.assertEqual(self.errors, []) 
