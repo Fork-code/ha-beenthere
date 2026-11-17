@@ -15,7 +15,7 @@ Whether you've visited five countries or fifty, it's a fun way to keep track of 
   >
 </p>
 
-[Explore features](#explore-your-world) · [Get started](#getting-started) · [User guide](#how-to-use-beenthere) · [Privacy](#privacy) · [For developers](docs/DEVELOPMENT.md)
+[Explore features](#%EF%B8%8F-explore-your-world) · [Get started](#-getting-started) · [User guide](#-how-to-use-beenthere) · [Privacy](#-privacy) · [For developers](docs/development.md)
 
 ## 🗺️ Explore your world
 
