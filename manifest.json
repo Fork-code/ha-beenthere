@@ -3,9 +3,7 @@
   "name": "BeenThere",
   "after_dependencies": ["lovelace"],
   "categories": [
-    "location",
-    "person",
-    "utility"
+    "productivity_information"
   ],
   "codeowners": ["@tampie85"],
   "config_flow": true,
