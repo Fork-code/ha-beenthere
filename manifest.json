@@ -2,6 +2,11 @@
   "domain": "beenthere",
   "name": "BeenThere",
   "after_dependencies": ["lovelace"],
+  "categories": [
+    "location",
+    "person",
+    "utility"
+  ],
   "codeowners": ["@tampie85"],
   "config_flow": true,
   "dependencies": [

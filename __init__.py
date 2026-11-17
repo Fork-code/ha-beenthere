@@ -16,6 +16,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 
 from .const import CARD_URL, DOMAIN, PANEL_PATH, PANEL_URL, STORAGE_VERSION, UPDATED_EVENT
@@ -23,6 +24,8 @@ from .geography import get_geography
 from .storage import ACTION_FIELDS, apply_change, create_default_data, migrate_data, normalize_data
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 @dataclass

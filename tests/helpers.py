@@ -46,7 +46,7 @@ def load_integration():
         "homeassistant.components.panel_custom", "homeassistant.components.websocket_api",
         "homeassistant.components.http", "homeassistant.config_entries",
         "homeassistant.core", "homeassistant.helpers", "homeassistant.helpers.storage",
-        "homeassistant.exceptions",
+        "homeassistant.helpers.config_validation", "homeassistant.exceptions",
     ):
         modules[name] = ModuleType(name)
     modules["homeassistant.core"].HomeAssistant = object
@@ -54,6 +54,8 @@ def load_integration():
     modules["homeassistant.helpers.storage"].Store = MemoryStore
     modules["homeassistant.exceptions"].HomeAssistantError = RuntimeError
     modules["homeassistant.components.http"].StaticPathConfig = Mock()
+    cv = modules["homeassistant.helpers.config_validation"]
+    cv.config_entry_only_config_schema = lambda domain: vol.Schema({})
     frontend = modules["homeassistant.components.frontend"]
     frontend.async_remove_panel = Mock()
     panel = modules["homeassistant.components.panel_custom"]
