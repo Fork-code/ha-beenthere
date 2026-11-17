@@ -138,6 +138,7 @@ class VisitedCountriesCard extends HTMLElement {
     }
   }
   canEdit() { return this._hass?.user?.is_admin===true; }
+  canEditVisits() { return !!this._hass?.user; }
   getCardSize() { return 8; }
   getGridOptions() {
     return {columns: 12, min_columns: 12, max_columns: 12, rows: 8};
@@ -245,7 +246,7 @@ class VisitedCountriesCard extends HTMLElement {
     else render();
   }
   async change(action, args={}) {
-    if(!this.canEdit()) {
+    if(!(this.canEdit()||(this.canEditVisits()&&['toggle_country','set_visit'].includes(action)))) {
       this.setError(new Error('Administrator access is required to change BeenThere data.'));
       return;
     }
@@ -393,7 +394,7 @@ class VisitedCountriesCard extends HTMLElement {
   }
   async setLocationVisit(code, visited, focusAttribute='data-location', confirmRemoval=true) {
     const view=this.chosen();
-    if(view.type!=='traveller'||!this.canEdit()||this._pendingChanges)return;
+    if(view.type!=='traveller'||!this.canEditVisits()||this._pendingChanges)return;
     if(!visited&&confirmRemoval&&!this.confirmCountryVisitRemoval(code,view))return;
     await this.change('set_visit',{id:view.id,location:code,visited});
     const target=this.querySelector(`[${focusAttribute}="${code}"]`)
@@ -402,7 +403,7 @@ class VisitedCountriesCard extends HTMLElement {
   }
   async removeCountryVisit(code) {
     const view=this.chosen();
-    if(view.type!=='traveller'||!this.canEdit()||this._pendingChanges||!this.visited(view).has(code))return;
+    if(view.type!=='traveller'||!this.canEditVisits()||this._pendingChanges||!this.visited(view).has(code))return;
     if(!this.confirmCountryVisitRemoval(code,view))return;
     this.selectedLocation=code;
     this.focusedCountry=code;
@@ -953,7 +954,7 @@ class VisitedCountriesCard extends HTMLElement {
     const resultRegions=resultCode&&!resultRegion&&this.subdivisionTrackingEnabled(resultCode)?this.regionsFor(resultCode):[];
     const resultVisited=resultRegion?visited.has(resultLocation):derivedCountries.has(resultCode);
     const resultExplicit=visited.has(resultLocation);
-    const editable=this.canEdit()&&view.type==='traveller';
+    const editable=this.canEditVisits()&&view.type==='traveller';
     const enabledRegionalCodes=(this.catalogue?.subdivision_countries||[])
       .filter(code=>this.subdivisionTrackingEnabled(code)&&this.regionsFor(code).length
         &&(this.continent==='World'||countryCodes.has(code)));
@@ -1075,7 +1076,7 @@ class VisitedCountriesCard extends HTMLElement {
     <div class="filters-anchor"><button id="filters-toggle" class="filters-toggle" type="button" aria-expanded="${!!this.filtersOpen}" aria-controls="map-filters" data-filters-active="${filtersActive}" aria-label="Filters: ${this.esc(this.filterSummary())}"><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon><div class="filters-toggle-content"><span class="filters-label">Filters</span><span class="filters-summary">${this.esc(this.filterSummary())}</span></div><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></button>${filters}</div>
     </div><div class="map-layout" style="--map-aspect-ratio:${mapAspectRatio}"><div class="map-column"><div class="map">${this.geo?`<svg viewBox="${bounds}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="group" tabindex="0" aria-label="Interactive ${this.esc(this.continent)} map">${this.continent==='World'?`<svg x="0" y="0" width="864" height="${(90-WORLD_SOUTH_LATITUDE)*2.4}" overflow="hidden">${shapes}${subdivisionShapes}</svg>`:`${shapes}${subdivisionShapes}`}</svg><div class="map-zoom-controls" role="group" aria-label="Map zoom"><button id="map-zoom-in" type="button" aria-label="Zoom in" title="Zoom in"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon></button><button id="map-zoom-out" type="button" aria-label="Zoom out" title="Zoom out"><ha-icon icon="mdi:minus" aria-hidden="true"></ha-icon></button><button id="map-zoom-reset" type="button" aria-label="Reset map view" title="Reset map view"><ha-icon icon="mdi:restore" aria-hidden="true"></ha-icon></button></div>`:'<p class="muted" style="padding:20px">Loading map… Internet access is required to load country outlines.</p>'}</div></div>
     <aside class="region-panel" aria-label="Visited destinations sidebar">
-    <section class="visited-country-section" aria-label="Visited destinations"><h2 class="sidebar-heading">Visited destinations &middot; <span class="country-count">${menuCountries.length} of ${eligibleCountries.size}</span></h2><hr class="visited-country-divider" aria-hidden="true"/>${menuCountries.length?`<ul class="visited-country-list" aria-label="Visited destinations">${menuCountries.map(country=>{const regions=this.regionsFor(country.code);const visitedRegions=regions.filter(region=>visited.has(region.code));const expandable=this.subdivisionTrackingEnabled(country.code)&&visitedRegions.length>0;const expanded=expandable&&this.expandedCountries.has(country.code);const canRemove=this.canEdit()&&view.type==='traveller'&&visited.has(country.code);return `<li class="visited-country-item${this.selectedLocation===country.code?' selected':this.parentCountry(this.selectedLocation)===country.code?' region-context':''}" data-country-item="${this.esc(country.code)}"><div class="visited-country-row"><button type="button" data-location-select="${this.esc(country.code)}" class="country-link" title="${this.esc(country.name)}" aria-current="${this.selectedLocation===country.code}"><img src="https://flagcdn.com/w40/${this.flagCode(country.code)}.png" alt="" width="24" height="18" loading="lazy"/><span class="country-name">${this.esc(country.name)}</span></button><span class="country-actions">${expandable?`<button type="button" data-region-toggle="${this.esc(country.code)}" class="region-link" aria-expanded="${expanded}" aria-controls="visited-${this.esc(country.code)}" aria-label="${expanded?'Collapse':'Expand'} visited regions in ${this.esc(country.name)}"><ha-icon icon="mdi:chevron-${expanded?'down':'right'}" aria-hidden="true"></ha-icon></button>`:''}${canRemove?`<button type="button" data-remove-country="${this.esc(country.code)}" class="remove-country-visit" aria-label="Remove country-only visit to ${this.esc(country.name)}" title="Remove country-only visit"${this._pendingChanges?' disabled':''}>&times;</button>`:''}</span></div>${expanded?`<ul id="visited-${this.esc(country.code)}" class="visited-subdivision-list" aria-label="Visited regions in ${this.esc(country.name)}">${visitedRegions.map(region=>`<li${this.selectedLocation===region.code?' class="selected"':''}><button type="button" class="location-select" data-location-select="${this.esc(region.code)}" title="${this.esc(region.name)}" aria-current="${this.selectedLocation===region.code}">${this.esc(region.name)}</button></li>`).join('')}</ul>`:''}</li>`;}).join('')}</ul>`:`<p class="muted visited-country-empty" role="status">${this.data?'No destinations visited yet.':'Loading destinations...'}</p>`}</section>
+    <section class="visited-country-section" aria-label="Visited destinations"><h2 class="sidebar-heading">Visited destinations &middot; <span class="country-count">${menuCountries.length} of ${eligibleCountries.size}</span></h2><hr class="visited-country-divider" aria-hidden="true"/>${menuCountries.length?`<ul class="visited-country-list" aria-label="Visited destinations">${menuCountries.map(country=>{const regions=this.regionsFor(country.code);const visitedRegions=regions.filter(region=>visited.has(region.code));const expandable=this.subdivisionTrackingEnabled(country.code)&&visitedRegions.length>0;const expanded=expandable&&this.expandedCountries.has(country.code);const canRemove=this.canEditVisits()&&view.type==='traveller'&&visited.has(country.code);return `<li class="visited-country-item${this.selectedLocation===country.code?' selected':this.parentCountry(this.selectedLocation)===country.code?' region-context':''}" data-country-item="${this.esc(country.code)}"><div class="visited-country-row"><button type="button" data-location-select="${this.esc(country.code)}" class="country-link" title="${this.esc(country.name)}" aria-current="${this.selectedLocation===country.code}"><img src="https://flagcdn.com/w40/${this.flagCode(country.code)}.png" alt="" width="24" height="18" loading="lazy"/><span class="country-name">${this.esc(country.name)}</span></button><span class="country-actions">${expandable?`<button type="button" data-region-toggle="${this.esc(country.code)}" class="region-link" aria-expanded="${expanded}" aria-controls="visited-${this.esc(country.code)}" aria-label="${expanded?'Collapse':'Expand'} visited regions in ${this.esc(country.name)}"><ha-icon icon="mdi:chevron-${expanded?'down':'right'}" aria-hidden="true"></ha-icon></button>`:''}${canRemove?`<button type="button" data-remove-country="${this.esc(country.code)}" class="remove-country-visit" aria-label="Remove country-only visit to ${this.esc(country.name)}" title="Remove country-only visit"${this._pendingChanges?' disabled':''}>&times;</button>`:''}</span></div>${expanded?`<ul id="visited-${this.esc(country.code)}" class="visited-subdivision-list" aria-label="Visited regions in ${this.esc(country.name)}">${visitedRegions.map(region=>`<li${this.selectedLocation===region.code?' class="selected"':''}><button type="button" class="location-select" data-location-select="${this.esc(region.code)}" title="${this.esc(region.name)}" aria-current="${this.selectedLocation===region.code}">${this.esc(region.name)}</button></li>`).join('')}</ul>`:''}</li>`;}).join('')}</ul>`:`<p class="muted visited-country-empty" role="status">${this.data?'No destinations visited yet.':'Loading destinations...'}</p>`}</section>
     </aside>
     </div>
     ${this.error?`<div class="error" role="alert">${this.esc(this.error)}</div>`:''}

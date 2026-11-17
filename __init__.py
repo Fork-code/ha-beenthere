@@ -43,6 +43,8 @@ GET_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/get",
 }
 
+VISIT_ACTIONS = {"toggle_country", "set_visit"}
+
 CHANGE_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/change",
     vol.Required("action"): vol.In(ACTION_FIELDS),
@@ -95,7 +97,11 @@ async def get_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None
 @websocket_api.async_response
 async def change_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     """Validate, persist and publish an administrator's change."""
-    if connection.user is None or not connection.user.is_admin:
+    # Local change: any signed-in user may mark/unmark visits; managing
+    # travellers, groups and map settings stays admin-only.
+    if connection.user is None or (
+        not connection.user.is_admin and msg["action"] not in VISIT_ACTIONS
+    ):
         connection.send_error(
             msg["id"], "unauthorized",
             "Administrator access is required to change BeenThere data.",
@@ -191,7 +197,7 @@ async def async_setup_entry(
         frontend_url_path=PANEL_PATH,
         sidebar_title="BeenThere",
         sidebar_icon="mdi:map-marker-check",
-        module_url=f"{PANEL_URL}?v=28",
+        module_url=f"{PANEL_URL}?v=29",
         embed_iframe=False,
         require_admin=False,
     )
