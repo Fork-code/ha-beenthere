@@ -1,4 +1,5 @@
 ﻿/* BeenThere - Lovelace custom card, v0.1.0 */
+const MAP_MAX_ZOOM=64;
 const MAP_SOURCES = Object.freeze({
   countries: 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_map_units.geojson',
 });
@@ -36,6 +37,12 @@ class VisitedCountriesCard extends HTMLElement {
     this._positionFiltersHandler ||= () => this.positionFilters();
     this._fitMapHandler ||= () => {this.fitMap();this.updateMapViewport();};
     this.ownerDocument?.defaultView?.addEventListener('resize',this._fitMapHandler);
+    this.ownerDocument?.defaultView?.visualViewport?.addEventListener('resize',this._fitMapHandler);
+    if(this.config?.fill_screen&&typeof ResizeObserver==='function') {
+      this._fitObserver ||= new ResizeObserver(()=>this._fitMapHandler());
+      this._fitObserver.observe(this.ownerDocument.documentElement);
+      this._fitObserver.observe(this);
+    }
     this.ownerDocument?.addEventListener('pointerdown',this._dismissSearchHandler);
     this.ownerDocument?.addEventListener('keydown',this._dismissFiltersHandler);
     this.ownerDocument?.addEventListener('scroll',this._positionFiltersHandler,true);
@@ -53,6 +60,8 @@ class VisitedCountriesCard extends HTMLElement {
     this.ownerDocument?.removeEventListener('scroll',this._positionFiltersHandler,true);
     this.ownerDocument?.defaultView?.removeEventListener('resize',this._positionFiltersHandler);
     this.ownerDocument?.defaultView?.removeEventListener('resize',this._fitMapHandler);
+    this.ownerDocument?.defaultView?.visualViewport?.removeEventListener('resize',this._fitMapHandler);
+    this._fitObserver?.disconnect();
     this.ownerDocument?.defaultView?.visualViewport?.removeEventListener('resize',this._positionFiltersHandler);
     this.ownerDocument?.defaultView?.visualViewport?.removeEventListener('scroll',this._positionFiltersHandler);
     this.stopConnection();
@@ -125,9 +134,9 @@ class VisitedCountriesCard extends HTMLElement {
     this._subscriptionAttempt = attempt;
     const current = () => this._connected && this._connection === connection && this._connectionEpoch === epoch;
     try {
-      const unsubscribe = await connection.subscribeEvents(() => {
+      const unsubscribe = await connection.subscribeMessage(() => {
         if (current()) this.refreshData();
-      }, 'beenthere_updated');
+      }, {type: 'beenthere/subscribe'});
       if (current()) {
         this._unsubscribeUpdates = unsubscribe;
         this.refreshData();
@@ -147,17 +156,20 @@ class VisitedCountriesCard extends HTMLElement {
     if(!this.config?.fill_screen)return;
     const map=this.querySelector('.map-layout .map'),vc=this.querySelector('.vc');
     if(!map||!vc)return;
-    const scroller=this.getRootNode()?.host||document.scrollingElement;
-    const viewport=scroller?.clientHeight||window.innerHeight;
-    const scrollerTop=scroller?.getBoundingClientRect?.().top||0;
-    const top=map.getBoundingClientRect().top-scrollerTop+(scroller?.scrollTop||0);
+    const viewport=window.visualViewport?.height||window.innerHeight;
+    // Distance from the top of the page to the map, ignoring any scrolling.
+    let scrolled=document.scrollingElement?.scrollTop||0;
+    for(let node=map;node;node=node.parentNode||node.host) {
+      if(node.nodeType===1&&node.scrollHeight>node.clientHeight)scrolled+=node.scrollTop||0;
+    }
+    const top=map.getBoundingClientRect().top+scrolled;
     const narrow=window.matchMedia('(max-width:760px)').matches;
     const list=narrow?210+10:0;
     const bottom=parseFloat(getComputedStyle(vc).paddingBottom)||0;
     const height=Math.max(narrow?260:320,Math.floor(viewport-top-list-bottom-4));
-    vc.style.setProperty('--bt-map-h',`${height}px`);
+    if(vc.style.getPropertyValue('--bt-map-h')!==`${height}px`)vc.style.setProperty('--bt-map-h',`${height}px`);
   }
-  canDelete() { return this._hass?.user?.is_admin===true; }
+  canDelete() { return this.canEdit(); }
   getCardSize() { return 8; }
   getGridOptions() {
     return {columns: 12, min_columns: 12, max_columns: 12, rows: 8};
@@ -718,7 +730,7 @@ class VisitedCountriesCard extends HTMLElement {
     this._mapOffsetY=Math.max(-maxY,Math.min(maxY,this._mapOffsetY));
     svg.setAttribute('viewBox',`${x+maxX+this._mapOffsetX} ${y+maxY+this._mapOffsetY} ${viewWidth} ${viewHeight}`);
     svg.classList.toggle('zoomed',this._mapCanPan);
-    this.querySelector('#map-zoom-in').disabled=zoom>=8;
+    this.querySelector('#map-zoom-in').disabled=zoom>=MAP_MAX_ZOOM;
     this.querySelector('#map-zoom-out').disabled=zoom<=1;
     this.querySelector('#map-zoom-reset').disabled=zoom===1;
   }
@@ -726,7 +738,7 @@ class VisitedCountriesCard extends HTMLElement {
     const svg=this.querySelector('.map>svg');
     const inverse=anchor?svg?.getScreenCTM()?.inverse():null;
     const point=inverse?new DOMPoint(anchor.x,anchor.y).matrixTransform(inverse):null;
-    this._mapZoom=Math.max(1,Math.min(8,zoom));
+    this._mapZoom=Math.max(1,Math.min(MAP_MAX_ZOOM,zoom));
     this.updateMapViewport();
     if(point) {
       const current=new DOMPoint(destination.x,destination.y).matrixTransform(svg.getScreenCTM().inverse());
@@ -1023,6 +1035,7 @@ class VisitedCountriesCard extends HTMLElement {
       .muted{color:#9bb4c8;font-size:13px}.error{color:#ffb6ae;margin:10px 0}.hidden{display:none!important}
       .settings-view{box-sizing:border-box;min-height:calc(100dvh - 56px);padding:4px 0 20px}.settings-view>h2{margin:0 0 16px;font-size:22px;color:#e6f8ff}.settings-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,3fr) minmax(0,4fr);align-items:start;gap:16px}.settings-card{box-sizing:border-box;display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;border:1px solid #234a61;border-radius:11px;background:#112b3f}.settings-card h2{margin:0;font-size:16px;font-weight:700;color:#b6e8f1}.manager-help{margin:-6px 0 0;color:#9bb4c8;font-size:12px;line-height:1.45}.manager-list{display:flex;flex-direction:column;gap:0}.chip{display:grid;grid-template-columns:minmax(0,1fr) 36px 36px;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #27445c;font-size:14px}.chip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.chip-name small{display:block;color:#9bb4c8;font-size:12px;margin-top:3px}.settings-card button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 10px;border-radius:7px;font-size:13px;letter-spacing:0}.settings-card button ha-icon{--mdc-icon-size:18px;flex-shrink:0}.chip button{width:40px;height:40px;padding:0;background:transparent}.chip button:hover{background:#203a51}.chip button[data-delete]:hover,.chip button[data-delete-group]:hover{color:#ffb6ae;border-color:#ffb6ae}.settings-card .add-button{width:100%;background:#203a51}.settings-card button:focus-visible,.map-detail-option:focus-within,.settings-dialog button:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}.settings-card .regional-card{grid-column:auto}
       .manager-empty{display:flex;align-items:flex-start;gap:8px;margin:0;padding:6px 0;color:#9bb4c8;font-size:13px;line-height:1.45}.manager-empty ha-icon{--mdc-icon-size:18px;flex-shrink:0}
+      .map .country{vector-effect:non-scaling-stroke}
       .vc.fill-screen .map{aspect-ratio:auto;height:var(--bt-map-h,60dvh)}
       @media(max-width:760px){.vc.fill-screen .region-panel{aspect-ratio:auto;height:var(--bt-list-h,210px)}}
       .map-detail-options{display:flex;flex-direction:column;gap:0}.map-detail-option{display:grid;grid-template-columns:24px minmax(0,1fr) 24px;align-items:center;gap:10px;min-height:44px;border-bottom:1px solid #27445c;font-size:14px;cursor:pointer}.map-detail-option img{display:block;width:24px;height:18px;object-fit:contain}.map-detail-option span{min-width:0;overflow-wrap:anywhere}.map-detail-option input{box-sizing:border-box;width:20px;height:20px;margin:0;padding:0;accent-color:#63f3e5;cursor:pointer}.map-detail-option input:focus-visible{outline:2px solid #63f3e5;outline-offset:3px}.map-detail-option input:disabled{cursor:default}
@@ -1127,6 +1140,10 @@ class VisitedCountriesCard extends HTMLElement {
     if(mapSvg) {
       this.fitMap();
       this.updateMapViewport();
+      if(this.config?.fill_screen) {
+        requestAnimationFrame(()=>this._fitMapHandler?.());
+        setTimeout(()=>this._fitMapHandler?.(),600);
+      }
       this.querySelector('#map-zoom-in').onclick=()=>this.setMapZoom(this._mapZoom*2);
       this.querySelector('#map-zoom-out').onclick=()=>this.setMapZoom(this._mapZoom/2);
       this.querySelector('#map-zoom-reset').onclick=()=>{

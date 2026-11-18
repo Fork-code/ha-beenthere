@@ -1,4 +1,4 @@
-import './beenthere-card.js?v=30';
+import './beenthere-card.js?v=31';
 
 class VisitedCountriesPanel extends HTMLElement {
   constructor() {

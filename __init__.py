@@ -14,7 +14,7 @@ import voluptuous as vol
 from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
@@ -45,7 +45,11 @@ GET_COMMAND = {
 
 # Fork-code: deleting travellers/groups stays admin-only; everything else is
 # open to any signed-in Home Assistant user.
-ADMIN_ONLY_ACTIONS = {"delete_traveller", "delete_group"}
+ADMIN_ONLY_ACTIONS: set[str] = set()  # full access for every signed-in user
+
+SUBSCRIBE_COMMAND = {
+    vol.Required("type"): f"{DOMAIN}/subscribe",
+}
 
 CHANGE_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/change",
@@ -136,6 +140,25 @@ async def change_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> N
         connection.send_result(msg["id"], candidate)
 
 
+@websocket_api.websocket_command(SUBSCRIBE_COMMAND)
+@callback
+def subscribe_updates(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Forward BeenThere updates to any signed-in user.
+
+    Core only lets admins subscribe to custom bus events, so non-admin
+    users need this dedicated subscription.
+    """
+
+    @callback
+    def forward(event: Event) -> None:
+        connection.send_message(
+            websocket_api.event_message(msg["id"], {"entry_id": event.data.get("entry_id")})
+        )
+
+    connection.subscriptions[msg["id"]] = hass.bus.async_listen(UPDATED_EVENT, forward)
+    connection.send_result(msg["id"])
+
+
 async def async_setup(
     hass: HomeAssistant,
     config: dict[str, Any],
@@ -145,6 +168,7 @@ async def async_setup(
     if not domain_data.get("commands_registered"):
         websocket_api.async_register_command(hass, get_data)
         websocket_api.async_register_command(hass, change_data)
+        websocket_api.async_register_command(hass, subscribe_updates)
         domain_data["commands_registered"] = True
     return True
 
@@ -197,7 +221,7 @@ async def async_setup_entry(
         frontend_url_path=PANEL_PATH,
         sidebar_title="BeenThere",
         sidebar_icon="mdi:map-marker-check",
-        module_url=f"{PANEL_URL}?v=30",
+        module_url=f"{PANEL_URL}?v=31",
         embed_iframe=False,
         require_admin=False,
     )
