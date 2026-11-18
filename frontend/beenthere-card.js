@@ -34,6 +34,8 @@ class VisitedCountriesCard extends HTMLElement {
       }
     };
     this._positionFiltersHandler ||= () => this.positionFilters();
+    this._fitMapHandler ||= () => {this.fitMap();this.updateMapViewport();};
+    this.ownerDocument?.defaultView?.addEventListener('resize',this._fitMapHandler);
     this.ownerDocument?.addEventListener('pointerdown',this._dismissSearchHandler);
     this.ownerDocument?.addEventListener('keydown',this._dismissFiltersHandler);
     this.ownerDocument?.addEventListener('scroll',this._positionFiltersHandler,true);
@@ -50,6 +52,7 @@ class VisitedCountriesCard extends HTMLElement {
     this.ownerDocument?.removeEventListener('keydown',this._dismissFiltersHandler);
     this.ownerDocument?.removeEventListener('scroll',this._positionFiltersHandler,true);
     this.ownerDocument?.defaultView?.removeEventListener('resize',this._positionFiltersHandler);
+    this.ownerDocument?.defaultView?.removeEventListener('resize',this._fitMapHandler);
     this.ownerDocument?.defaultView?.visualViewport?.removeEventListener('resize',this._positionFiltersHandler);
     this.ownerDocument?.defaultView?.visualViewport?.removeEventListener('scroll',this._positionFiltersHandler);
     this.stopConnection();
@@ -137,8 +140,24 @@ class VisitedCountriesCard extends HTMLElement {
       if (this._subscriptionAttempt === attempt) this._subscriptionAttempt = null;
     }
   }
-  canEdit() { return this._hass?.user?.is_admin===true; }
-  canEditVisits() { return !!this._hass?.user; }
+  canEdit() { return !!this._hass?.user; }
+  fitMap() {
+    // Fork-code: in the sidebar panel, grow the map box to fill the free
+    // screen height (keeping the visited list visible below it on phones).
+    if(!this.config?.fill_screen)return;
+    const map=this.querySelector('.map-layout .map'),vc=this.querySelector('.vc');
+    if(!map||!vc)return;
+    const scroller=this.getRootNode()?.host||document.scrollingElement;
+    const viewport=scroller?.clientHeight||window.innerHeight;
+    const scrollerTop=scroller?.getBoundingClientRect?.().top||0;
+    const top=map.getBoundingClientRect().top-scrollerTop+(scroller?.scrollTop||0);
+    const narrow=window.matchMedia('(max-width:760px)').matches;
+    const list=narrow?210+10:0;
+    const bottom=parseFloat(getComputedStyle(vc).paddingBottom)||0;
+    const height=Math.max(narrow?260:320,Math.floor(viewport-top-list-bottom-4));
+    vc.style.setProperty('--bt-map-h',`${height}px`);
+  }
+  canDelete() { return this._hass?.user?.is_admin===true; }
   getCardSize() { return 8; }
   getGridOptions() {
     return {columns: 12, min_columns: 12, max_columns: 12, rows: 8};
@@ -246,8 +265,8 @@ class VisitedCountriesCard extends HTMLElement {
     else render();
   }
   async change(action, args={}) {
-    if(!(this.canEdit()||(this.canEditVisits()&&['toggle_country','set_visit'].includes(action)))) {
-      this.setError(new Error('Administrator access is required to change BeenThere data.'));
+    if(!this.canEdit()||(['delete_traveller','delete_group'].includes(action)&&!this.canDelete())) {
+      this.setError(new Error('Administrator access is required to delete travellers or groups.'));
       return;
     }
     if(this._pendingChanges)return;
@@ -394,7 +413,7 @@ class VisitedCountriesCard extends HTMLElement {
   }
   async setLocationVisit(code, visited, focusAttribute='data-location', confirmRemoval=true) {
     const view=this.chosen();
-    if(view.type!=='traveller'||!this.canEditVisits()||this._pendingChanges)return;
+    if(view.type!=='traveller'||!this.canEdit()||this._pendingChanges)return;
     if(!visited&&confirmRemoval&&!this.confirmCountryVisitRemoval(code,view))return;
     await this.change('set_visit',{id:view.id,location:code,visited});
     const target=this.querySelector(`[${focusAttribute}="${code}"]`)
@@ -403,7 +422,7 @@ class VisitedCountriesCard extends HTMLElement {
   }
   async removeCountryVisit(code) {
     const view=this.chosen();
-    if(view.type!=='traveller'||!this.canEditVisits()||this._pendingChanges||!this.visited(view).has(code))return;
+    if(view.type!=='traveller'||!this.canEdit()||this._pendingChanges||!this.visited(view).has(code))return;
     if(!this.confirmCountryVisitRemoval(code,view))return;
     this.selectedLocation=code;
     this.focusedCountry=code;
@@ -683,12 +702,22 @@ class VisitedCountriesCard extends HTMLElement {
     if(!svg||!this._mapBaseBounds)return;
     const [x,y,width,height]=this._mapBaseBounds;
     const zoom=this._mapZoom;
-    const viewWidth=width/zoom,viewHeight=height/zoom;
+    let fitWidth=width,fitHeight=height;
+    if(this.config?.fill_screen) {
+      const box=svg.getBoundingClientRect();
+      if(box.width>0&&box.height>0) {
+        const aspect=box.width/box.height;
+        fitWidth=Math.min(width,height*aspect);
+        fitHeight=Math.min(height,width/aspect);
+      }
+    }
+    const viewWidth=fitWidth/zoom,viewHeight=fitHeight/zoom;
+    this._mapCanPan=zoom>1||viewWidth<width-0.5||viewHeight<height-0.5;
     const maxX=(width-viewWidth)/2,maxY=(height-viewHeight)/2;
     this._mapOffsetX=Math.max(-maxX,Math.min(maxX,this._mapOffsetX));
     this._mapOffsetY=Math.max(-maxY,Math.min(maxY,this._mapOffsetY));
     svg.setAttribute('viewBox',`${x+maxX+this._mapOffsetX} ${y+maxY+this._mapOffsetY} ${viewWidth} ${viewHeight}`);
-    svg.classList.toggle('zoomed',zoom>1);
+    svg.classList.toggle('zoomed',this._mapCanPan);
     this.querySelector('#map-zoom-in').disabled=zoom>=8;
     this.querySelector('#map-zoom-out').disabled=zoom<=1;
     this.querySelector('#map-zoom-reset').disabled=zoom===1;
@@ -954,7 +983,7 @@ class VisitedCountriesCard extends HTMLElement {
     const resultRegions=resultCode&&!resultRegion&&this.subdivisionTrackingEnabled(resultCode)?this.regionsFor(resultCode):[];
     const resultVisited=resultRegion?visited.has(resultLocation):derivedCountries.has(resultCode);
     const resultExplicit=visited.has(resultLocation);
-    const editable=this.canEditVisits()&&view.type==='traveller';
+    const editable=this.canEdit()&&view.type==='traveller';
     const enabledRegionalCodes=(this.catalogue?.subdivision_countries||[])
       .filter(code=>this.subdivisionTrackingEnabled(code)&&this.regionsFor(code).length
         &&(this.continent==='World'||countryCodes.has(code)));
@@ -994,6 +1023,8 @@ class VisitedCountriesCard extends HTMLElement {
       .muted{color:#9bb4c8;font-size:13px}.error{color:#ffb6ae;margin:10px 0}.hidden{display:none!important}
       .settings-view{box-sizing:border-box;min-height:calc(100dvh - 56px);padding:4px 0 20px}.settings-view>h2{margin:0 0 16px;font-size:22px;color:#e6f8ff}.settings-grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,3fr) minmax(0,4fr);align-items:start;gap:16px}.settings-card{box-sizing:border-box;display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;border:1px solid #234a61;border-radius:11px;background:#112b3f}.settings-card h2{margin:0;font-size:16px;font-weight:700;color:#b6e8f1}.manager-help{margin:-6px 0 0;color:#9bb4c8;font-size:12px;line-height:1.45}.manager-list{display:flex;flex-direction:column;gap:0}.chip{display:grid;grid-template-columns:minmax(0,1fr) 36px 36px;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #27445c;font-size:14px}.chip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.chip-name small{display:block;color:#9bb4c8;font-size:12px;margin-top:3px}.settings-card button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:0 10px;border-radius:7px;font-size:13px;letter-spacing:0}.settings-card button ha-icon{--mdc-icon-size:18px;flex-shrink:0}.chip button{width:40px;height:40px;padding:0;background:transparent}.chip button:hover{background:#203a51}.chip button[data-delete]:hover,.chip button[data-delete-group]:hover{color:#ffb6ae;border-color:#ffb6ae}.settings-card .add-button{width:100%;background:#203a51}.settings-card button:focus-visible,.map-detail-option:focus-within,.settings-dialog button:focus-visible{outline:2px solid #63f3e5;outline-offset:2px}.settings-card .regional-card{grid-column:auto}
       .manager-empty{display:flex;align-items:flex-start;gap:8px;margin:0;padding:6px 0;color:#9bb4c8;font-size:13px;line-height:1.45}.manager-empty ha-icon{--mdc-icon-size:18px;flex-shrink:0}
+      .vc.fill-screen .map{aspect-ratio:auto;height:var(--bt-map-h,60dvh)}
+      @media(max-width:760px){.vc.fill-screen .region-panel{aspect-ratio:auto;height:var(--bt-list-h,210px)}}
       .map-detail-options{display:flex;flex-direction:column;gap:0}.map-detail-option{display:grid;grid-template-columns:24px minmax(0,1fr) 24px;align-items:center;gap:10px;min-height:44px;border-bottom:1px solid #27445c;font-size:14px;cursor:pointer}.map-detail-option img{display:block;width:24px;height:18px;object-fit:contain}.map-detail-option span{min-width:0;overflow-wrap:anywhere}.map-detail-option input{box-sizing:border-box;width:20px;height:20px;margin:0;padding:0;accent-color:#63f3e5;cursor:pointer}.map-detail-option input:focus-visible{outline:2px solid #63f3e5;outline-offset:3px}.map-detail-option input:disabled{cursor:default}
       .settings-dialog{width:min(440px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);overflow:auto;padding:0;border:1px solid #37536a;border-radius:12px;background:#112b3f;color:#e6f8ff;box-shadow:0 18px 60px #0009}.settings-dialog::backdrop{background:#050b14bb}.dialog-content{display:flex;flex-direction:column;gap:16px;padding:20px}.dialog-content h2{margin:0;font-size:19px}.dialog-content p{margin:0;color:#c6d9e5;line-height:1.5}.form-field{display:flex;flex-direction:column;gap:8px;font-size:14px}.form-field input{box-sizing:border-box;width:100%;min-height:44px}.member-list{display:flex;flex-direction:column;gap:2px;max-height:240px;overflow:auto;margin:0;padding:10px;border:1px solid #37536a;border-radius:8px}.member-list legend{padding:0 6px;color:#b6e8f1;font-size:14px}.member-option{display:flex;align-items:center;gap:10px;min-height:40px;cursor:pointer}.member-option input{width:20px;height:20px;margin:0;accent-color:#63f3e5}.member-option span{overflow-wrap:anywhere}.dialog-error{color:#ffb6ae!important}.dialog-actions{display:flex;justify-content:flex-end;gap:10px}.dialog-actions button{min-width:92px;min-height:44px}.dialog-actions .dialog-delete{border-color:#a74343;background:#652b34;color:#fff}.dialog-actions .dialog-delete:hover{border-color:#ff8b8b;background:#7c303a}
       .map-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;margin-top:14px;align-items:stretch}.map-column{min-width:0;min-height:0}.region-panel{box-sizing:border-box;contain:size;display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;overflow:hidden}.region-panel select{box-sizing:border-box;width:100%;border-radius:6px;background:#14283a}.region-panel .stats{flex-direction:column}.region-panel .stat{border:0;border-radius:0;background:transparent;padding:8px 0}.map-layout .map{width:100%;min-width:0}
@@ -1062,10 +1093,10 @@ class VisitedCountriesCard extends HTMLElement {
       @media(prefers-reduced-motion:reduce){.search-result-actions #toggle-search-result{transition:none}}
       @media(max-width:760px){.search-row{grid-template-columns:minmax(0,1fr) max-content;gap:12px}.filters-anchor{grid-column:2}.filters-toggle{flex-direction:row}.filters-toggle-content{display:none}.search-row>.search-result{grid-column:1/-1;grid-row:2}.search-result{flex-wrap:wrap}.search-result-info{flex-basis:calc(100% - 60px)}.search-result-actions{margin-left:auto}.country-edit{grid-column:1}.map-layout{grid-template-columns:minmax(0,1fr)}.region-panel{width:100%;aspect-ratio:var(--map-aspect-ratio,2);min-height:160px}}
       @media(max-width:520px){.map-layout{gap:10px}.region-panel select{padding:8px 4px;font-size:12px}.view-controls{padding:8px}.region-panel .view-selector select{font-size:12px}.country-search{width:100%}.vc{padding:12px}.region-summary{padding:10px}}
-    </style><div class="vc">
+    </style><div class="vc${this.config?.fill_screen?' fill-screen':''}">
     <div id="vc-settings" class="settings-view${this.settingsOpen?'':' hidden'}" role="region" aria-labelledby="vc-settings-title"><h2 id="vc-settings-title">Settings</h2><div class="settings-grid">
-      <section class="settings-card"><h2>Travellers</h2><p class="manager-help">Track the countries each person has visited on their own map.</p><div id="travellers" class="manager-list">${Object.entries(data.travellers).map(([id,p])=>`<div class="chip"><span class="chip-name" title="${this.esc(p.name)}">${this.esc(p.name)}</span><button type="button" data-rename="${this.esc(id)}" title="Edit traveller" aria-label="Edit ${this.esc(p.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><button type="button" data-delete="${this.esc(id)}" title="Delete traveller" aria-label="Delete ${this.esc(p.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button></div>`).join('')||'<p class="manager-empty">No travellers yet. Add your first traveller to get started.</p>'}</div><button type="button" id="add-traveller" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add traveller</button></section>
-      <section class="settings-card"><h2>Groups</h2><p class="manager-help">Combine travellers' existing visits on a shared, read-only map. No separate tracking needed.</p><div class="manager-list">${Object.entries(data.groups).map(([id,g])=>`<div class="chip"><span class="chip-name" title="${this.esc(g.name)}">${this.esc(g.name)}<small>${g.members.length} ${g.members.length===1?'traveller':'travellers'}</small></span><button type="button" data-edit-group="${this.esc(id)}" title="Edit group" aria-label="Edit ${this.esc(g.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button><button type="button" data-delete-group="${this.esc(id)}" title="Delete group" aria-label="Delete ${this.esc(g.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button></div>`).join('')||'<p class="manager-empty"><ha-icon icon="mdi:account-group-outline" aria-hidden="true"></ha-icon><span>No groups yet. Create a group to explore your travels together.</span></p>'}</div><button type="button" id="add-group" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add group</button></section>
+      <section class="settings-card"><h2>Travellers</h2><p class="manager-help">Track the countries each person has visited on their own map.</p><div id="travellers" class="manager-list">${Object.entries(data.travellers).map(([id,p])=>`<div class="chip"><span class="chip-name" title="${this.esc(p.name)}">${this.esc(p.name)}</span><button type="button" data-rename="${this.esc(id)}" title="Edit traveller" aria-label="Edit ${this.esc(p.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button>${this.canDelete()?'':'<!--'}<button type="button" data-delete="${this.esc(id)}" title="Delete traveller" aria-label="Delete ${this.esc(p.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button>${this.canDelete()?'':'-->'}</div>`).join('')||'<p class="manager-empty">No travellers yet. Add your first traveller to get started.</p>'}</div><button type="button" id="add-traveller" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add traveller</button></section>
+      <section class="settings-card"><h2>Groups</h2><p class="manager-help">Combine travellers' existing visits on a shared, read-only map. No separate tracking needed.</p><div class="manager-list">${Object.entries(data.groups).map(([id,g])=>`<div class="chip"><span class="chip-name" title="${this.esc(g.name)}">${this.esc(g.name)}<small>${g.members.length} ${g.members.length===1?'traveller':'travellers'}</small></span><button type="button" data-edit-group="${this.esc(id)}" title="Edit group" aria-label="Edit ${this.esc(g.name)}"><ha-icon icon="mdi:pencil-outline" aria-hidden="true"></ha-icon></button>${this.canDelete()?'':'<!--'}<button type="button" data-delete-group="${this.esc(id)}" title="Delete group" aria-label="Delete ${this.esc(g.name)}"><ha-icon icon="mdi:trash-can-outline" aria-hidden="true"></ha-icon></button>${this.canDelete()?'':'-->'}</div>`).join('')||'<p class="manager-empty"><ha-icon icon="mdi:account-group-outline" aria-hidden="true"></ha-icon><span>No groups yet. Create a group to explore your travels together.</span></p>'}</div><button type="button" id="add-group" class="add-button"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon>Add group</button></section>
       ${this.mapDetailSettings()}</div>${this.error?`<div class="error" role="alert">${this.esc(this.error)}</div>`:''}</div>
     ${this.dialogMarkup(data)}
     <div id="map-view" class="map-view${this.settingsOpen?' hidden':''}">
@@ -1076,7 +1107,7 @@ class VisitedCountriesCard extends HTMLElement {
     <div class="filters-anchor"><button id="filters-toggle" class="filters-toggle" type="button" aria-expanded="${!!this.filtersOpen}" aria-controls="map-filters" data-filters-active="${filtersActive}" aria-label="Filters: ${this.esc(this.filterSummary())}"><ha-icon icon="mdi:tune" aria-hidden="true"></ha-icon><div class="filters-toggle-content"><span class="filters-label">Filters</span><span class="filters-summary">${this.esc(this.filterSummary())}</span></div><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></button>${filters}</div>
     </div><div class="map-layout" style="--map-aspect-ratio:${mapAspectRatio}"><div class="map-column"><div class="map">${this.geo?`<svg viewBox="${bounds}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="group" tabindex="0" aria-label="Interactive ${this.esc(this.continent)} map">${this.continent==='World'?`<svg x="0" y="0" width="864" height="${(90-WORLD_SOUTH_LATITUDE)*2.4}" overflow="hidden">${shapes}${subdivisionShapes}</svg>`:`${shapes}${subdivisionShapes}`}</svg><div class="map-zoom-controls" role="group" aria-label="Map zoom"><button id="map-zoom-in" type="button" aria-label="Zoom in" title="Zoom in"><ha-icon icon="mdi:plus" aria-hidden="true"></ha-icon></button><button id="map-zoom-out" type="button" aria-label="Zoom out" title="Zoom out"><ha-icon icon="mdi:minus" aria-hidden="true"></ha-icon></button><button id="map-zoom-reset" type="button" aria-label="Reset map view" title="Reset map view"><ha-icon icon="mdi:restore" aria-hidden="true"></ha-icon></button></div>`:'<p class="muted" style="padding:20px">Loading map… Internet access is required to load country outlines.</p>'}</div></div>
     <aside class="region-panel" aria-label="Visited destinations sidebar">
-    <section class="visited-country-section" aria-label="Visited destinations"><h2 class="sidebar-heading">Visited destinations &middot; <span class="country-count">${menuCountries.length} of ${eligibleCountries.size}</span></h2><hr class="visited-country-divider" aria-hidden="true"/>${menuCountries.length?`<ul class="visited-country-list" aria-label="Visited destinations">${menuCountries.map(country=>{const regions=this.regionsFor(country.code);const visitedRegions=regions.filter(region=>visited.has(region.code));const expandable=this.subdivisionTrackingEnabled(country.code)&&visitedRegions.length>0;const expanded=expandable&&this.expandedCountries.has(country.code);const canRemove=this.canEditVisits()&&view.type==='traveller'&&visited.has(country.code);return `<li class="visited-country-item${this.selectedLocation===country.code?' selected':this.parentCountry(this.selectedLocation)===country.code?' region-context':''}" data-country-item="${this.esc(country.code)}"><div class="visited-country-row"><button type="button" data-location-select="${this.esc(country.code)}" class="country-link" title="${this.esc(country.name)}" aria-current="${this.selectedLocation===country.code}"><img src="https://flagcdn.com/w40/${this.flagCode(country.code)}.png" alt="" width="24" height="18" loading="lazy"/><span class="country-name">${this.esc(country.name)}</span></button><span class="country-actions">${expandable?`<button type="button" data-region-toggle="${this.esc(country.code)}" class="region-link" aria-expanded="${expanded}" aria-controls="visited-${this.esc(country.code)}" aria-label="${expanded?'Collapse':'Expand'} visited regions in ${this.esc(country.name)}"><ha-icon icon="mdi:chevron-${expanded?'down':'right'}" aria-hidden="true"></ha-icon></button>`:''}${canRemove?`<button type="button" data-remove-country="${this.esc(country.code)}" class="remove-country-visit" aria-label="Remove country-only visit to ${this.esc(country.name)}" title="Remove country-only visit"${this._pendingChanges?' disabled':''}>&times;</button>`:''}</span></div>${expanded?`<ul id="visited-${this.esc(country.code)}" class="visited-subdivision-list" aria-label="Visited regions in ${this.esc(country.name)}">${visitedRegions.map(region=>`<li${this.selectedLocation===region.code?' class="selected"':''}><button type="button" class="location-select" data-location-select="${this.esc(region.code)}" title="${this.esc(region.name)}" aria-current="${this.selectedLocation===region.code}">${this.esc(region.name)}</button></li>`).join('')}</ul>`:''}</li>`;}).join('')}</ul>`:`<p class="muted visited-country-empty" role="status">${this.data?'No destinations visited yet.':'Loading destinations...'}</p>`}</section>
+    <section class="visited-country-section" aria-label="Visited destinations"><h2 class="sidebar-heading">Visited destinations &middot; <span class="country-count">${menuCountries.length} of ${eligibleCountries.size}</span></h2><hr class="visited-country-divider" aria-hidden="true"/>${menuCountries.length?`<ul class="visited-country-list" aria-label="Visited destinations">${menuCountries.map(country=>{const regions=this.regionsFor(country.code);const visitedRegions=regions.filter(region=>visited.has(region.code));const expandable=this.subdivisionTrackingEnabled(country.code)&&visitedRegions.length>0;const expanded=expandable&&this.expandedCountries.has(country.code);const canRemove=this.canEdit()&&view.type==='traveller'&&visited.has(country.code);return `<li class="visited-country-item${this.selectedLocation===country.code?' selected':this.parentCountry(this.selectedLocation)===country.code?' region-context':''}" data-country-item="${this.esc(country.code)}"><div class="visited-country-row"><button type="button" data-location-select="${this.esc(country.code)}" class="country-link" title="${this.esc(country.name)}" aria-current="${this.selectedLocation===country.code}"><img src="https://flagcdn.com/w40/${this.flagCode(country.code)}.png" alt="" width="24" height="18" loading="lazy"/><span class="country-name">${this.esc(country.name)}</span></button><span class="country-actions">${expandable?`<button type="button" data-region-toggle="${this.esc(country.code)}" class="region-link" aria-expanded="${expanded}" aria-controls="visited-${this.esc(country.code)}" aria-label="${expanded?'Collapse':'Expand'} visited regions in ${this.esc(country.name)}"><ha-icon icon="mdi:chevron-${expanded?'down':'right'}" aria-hidden="true"></ha-icon></button>`:''}${canRemove?`<button type="button" data-remove-country="${this.esc(country.code)}" class="remove-country-visit" aria-label="Remove country-only visit to ${this.esc(country.name)}" title="Remove country-only visit"${this._pendingChanges?' disabled':''}>&times;</button>`:''}</span></div>${expanded?`<ul id="visited-${this.esc(country.code)}" class="visited-subdivision-list" aria-label="Visited regions in ${this.esc(country.name)}">${visitedRegions.map(region=>`<li${this.selectedLocation===region.code?' class="selected"':''}><button type="button" class="location-select" data-location-select="${this.esc(region.code)}" title="${this.esc(region.name)}" aria-current="${this.selectedLocation===region.code}">${this.esc(region.name)}</button></li>`).join('')}</ul>`:''}</li>`;}).join('')}</ul>`:`<p class="muted visited-country-empty" role="status">${this.data?'No destinations visited yet.':'Loading destinations...'}</p>`}</section>
     </aside>
     </div>
     ${this.error?`<div class="error" role="alert">${this.esc(this.error)}</div>`:''}
@@ -1094,6 +1125,7 @@ class VisitedCountriesCard extends HTMLElement {
     });
     const mapSvg=this.querySelector('.map svg');
     if(mapSvg) {
+      this.fitMap();
       this.updateMapViewport();
       this.querySelector('#map-zoom-in').onclick=()=>this.setMapZoom(this._mapZoom*2);
       this.querySelector('#map-zoom-out').onclick=()=>this.setMapZoom(this._mapZoom/2);
@@ -1123,7 +1155,7 @@ class VisitedCountriesCard extends HTMLElement {
       };
       mapSvg.onpointerdown=event=>{
         if(!pointers.size)this._mapSuppressClick=false;
-        if(event.button!==0||(event.pointerType!=='touch'&&this._mapZoom===1))return;
+        if(event.button!==0||(event.pointerType!=='touch'&&!this._mapCanPan))return;
         clearTimeout(this._mapClickTimer);
         pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
         event.target.setPointerCapture(event.pointerId);
@@ -1178,7 +1210,7 @@ class VisitedCountriesCard extends HTMLElement {
         if(this._mapSuppressClick&&event.detail!==0){event.preventDefault();event.stopPropagation();this._mapSuppressClick=false;}
       },true);
       mapSvg.addEventListener('keydown',event=>{
-        if(this._mapZoom===1)return;
+        if(!this._mapCanPan)return;
         const [,,width,height]=this._mapBaseBounds;
         const stepX=width/this._mapZoom*.15,stepY=height/this._mapZoom*.15;
         if(event.key==='ArrowLeft')this._mapOffsetX-=stepX;

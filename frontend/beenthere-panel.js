@@ -1,4 +1,4 @@
-import './beenthere-card.js?v=29';
+import './beenthere-card.js?v=30';
 
 class VisitedCountriesPanel extends HTMLElement {
   constructor() {
@@ -31,7 +31,7 @@ class VisitedCountriesPanel extends HTMLElement {
     `;
     this._menu = this.shadowRoot.querySelector('ha-menu-button');
     this._card = document.createElement('beenthere-card');
-    this._card.setConfig({type: 'custom:beenthere-card'});
+    this._card.setConfig({type: 'custom:beenthere-card', fill_screen: true});
     this.shadowRoot.querySelector('main').append(this._card);
     this._settingsToggle = this.shadowRoot.querySelector('.settings-toggle');
     this._settingsToggle.hidden = true;

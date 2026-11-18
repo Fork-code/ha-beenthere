@@ -43,7 +43,9 @@ GET_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/get",
 }
 
-VISIT_ACTIONS = {"toggle_country", "set_visit"}
+# Fork-code: deleting travellers/groups stays admin-only; everything else is
+# open to any signed-in Home Assistant user.
+ADMIN_ONLY_ACTIONS = {"delete_traveller", "delete_group"}
 
 CHANGE_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/change",
@@ -97,14 +99,12 @@ async def get_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None
 @websocket_api.async_response
 async def change_data(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     """Validate, persist and publish an administrator's change."""
-    # Local change: any signed-in user may mark/unmark visits; managing
-    # travellers, groups and map settings stays admin-only.
     if connection.user is None or (
-        not connection.user.is_admin and msg["action"] not in VISIT_ACTIONS
+        not connection.user.is_admin and msg["action"] in ADMIN_ONLY_ACTIONS
     ):
         connection.send_error(
             msg["id"], "unauthorized",
-            "Administrator access is required to change BeenThere data.",
+            "Administrator access is required to delete travellers or groups.",
         )
         return
     if (runtime := _runtime(hass)) is None:
@@ -197,7 +197,7 @@ async def async_setup_entry(
         frontend_url_path=PANEL_PATH,
         sidebar_title="BeenThere",
         sidebar_icon="mdi:map-marker-check",
-        module_url=f"{PANEL_URL}?v=29",
+        module_url=f"{PANEL_URL}?v=30",
         embed_iframe=False,
         require_admin=False,
     )
