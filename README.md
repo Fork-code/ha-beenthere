@@ -77,14 +77,14 @@ Your travel history is stored locally in Home Assistant, without needing another
 
 ## 🚀 Getting started
 
-### Install with HACS
+### Install with Marketplace
 
 1. Open **Marketplace** in Home Assistant.
-2. Add `https://github.com/tampie85/ha-beenthere` as a custom repository, selecting **Integration**.
-3. Find **BeenThere** and download it.
+2. Click "Add from link"
+3. Enter `https://github.com/tampie85/ha-beenthere`
 4. Restart Home Assistant.
-5. Go to **Settings → Devices & services → Add integration**.
-6. Search for **BeenThere** and complete setup.
+6. Go to **Settings → Devices & services → Add integration**.
+7. Search for **BeenThere** and complete setup.
 
 ### Your first map
 
