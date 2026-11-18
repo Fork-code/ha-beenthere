@@ -43,9 +43,9 @@ GET_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/get",
 }
 
-# Fork-code: deleting travellers/groups stays admin-only; everything else is
-# open to any signed-in Home Assistant user.
-ADMIN_ONLY_ACTIONS: set[str] = set()  # full access for every signed-in user
+# Fork-code: full access for every signed-in Home Assistant user. Add action
+# names here to make them admin-only again.
+ADMIN_ONLY_ACTIONS: set[str] = set()
 
 SUBSCRIBE_COMMAND = {
     vol.Required("type"): f"{DOMAIN}/subscribe",
